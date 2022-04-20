@@ -7,8 +7,6 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.zeroturnaround.zip.ZipEntryCallback;
-import org.zeroturnaround.zip.ZipUtil;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -16,12 +14,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Enumeration;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 public class ParallelClassLoader implements ClassLoader {
   private static final ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
@@ -65,18 +65,39 @@ public class ParallelClassLoader implements ClassLoader {
   private void processZip(final String zipName,
                           final Map<String, ClassInfo> foundClasses) {
     final File zip = new File(zipName);
-    ZipUtil.iterate(zip, new ZipEntryCallback() {
-      public void process(InputStream in, ZipEntry zipEntry) throws IOException {
-        if ((!zipEntry.isDirectory()) && (zipEntry.getName().endsWith(".class"))) {
+    try {
+      ZipFile zipFile = new ZipFile(zip);
+      Enumeration<ZipEntry> entrys = (Enumeration<ZipEntry>) zipFile.entries();
+      while ( entrys.hasMoreElements() ){
+        ZipEntry entry = entrys.nextElement();
+        if ((!entry.isDirectory()) && (entry.getName().endsWith(".class")) && !entry.getName().endsWith("module-info.class")) {
           try {
-            log.trace("Loading " + zipName + "(" + zipEntry.getName() + ")");
-            loadClassData(in, new ClassInfoClassVisitor(foundClasses, zip));
+            log.trace("Loading " + zipName + "(" + entry.getName() + ")");
+            loadClassData(zipFile.getInputStream(entry), new ClassInfoClassVisitor(foundClasses, zip));
           } catch (ClassFinderException ex) {
-            log.error("Can't open \"" + zipEntry.getName() + "\" in file \"" + zipName + "\": ", ex);
+            log.error("Can't open \"" + entry.getName() + "\" in file \"" + zipName + "\": ", ex);
           }
         }
       }
-    });
+    }catch (Exception ex){
+      ex.printStackTrace();
+    }
+
+//    ZipUtil.iterate(zip, new ZipEntryCallback() {
+//
+//      @Override
+//      public void process(InputStream in, ZipEntry zipEntry) throws IOException {
+//        if ((!zipEntry.isDirectory()) && (zipEntry.getName().endsWith(".class"))) {
+//          try {
+//            log.trace("Loading " + zipName + "(" + zipEntry.getName() + ")");
+//            loadClassData(in, new ClassInfoClassVisitor(foundClasses, zip));
+//          } catch (ClassFinderException ex) {
+//            log.error("Can't open \"" + zipEntry.getName() + "\" in file \"" + zipName + "\": ", ex);
+//          }
+//        }
+//      }
+//
+//    });
   }
 
   private void processDirectory(File dir, Map<String, ClassInfo> foundClasses) {
